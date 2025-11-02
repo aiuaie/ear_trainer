@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chord Ear Trainer (C)</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:16px;line-height:1.35}
+  h1{font-size:18px;margin:0 0 8px}
+  .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
+  .card{border:1px solid #ddd;border-radius:12px;padding:12px;margin:8px 0}
+  .btn{border:1px solid #ccc;border-radius:10px;padding:8px 12px;background:#fff}
+  .btn:disabled{opacity:.5}
+  .btn.choice{min-width:64px}
+  .controls .btn{font-weight:600}
+  .label{font-weight:600}
+  .score{font-weight:700}
+  .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:4px 10px;margin-right:6px}
+  .sep{height:1px;background:#eee;margin:12px 0}
+  .muted{color:#666}
+  /* Оверлей для разблокировки звука на iOS */
+  #unlockOverlay{
+    position:fixed;inset:0;background:rgba(255,255,255,.96);
+    display:flex;align-items:center;justify-content:center;z-index:9999;
+    font-size:18px;flex-direction:column;text-align:center;padding:24px
+  }
+  #unlockOverlay .btn{margin-top:12px;font-size:16px}
+  #audioHint{color:#b00;font-weight:600;display:none}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+  <h1>Chord Ear Trainer — тональность C</h1>
+  <div id="audioHint">Нажми «Включить звук», чтобы начать воспроизведение на iPhone</div>
+
+  <div class="card">
+    <div class="label">Выбери аккорды для тренировки</div>
+    <div id="degree-select" class="row"></div>
+    <div class="sep"></div>
+    <div class="label">Выбор тоники</div>
+    <div class="row" id="tonic-select">
+      <label class="pill"><input type="radio" name="tonic" value="I" checked> I (мажор)</label>
+      <!-- «i (минор)» = vi (Am) в C -->
+      <label class="pill"><input type="radio" name="tonic" value="vi"> i (минор)</label>
+    </div>
+  </div>
+
+  <div class="card controls">
+    <button id="next" class="btn">Прослушать следующую</button>
+    <button id="again" class="btn">Прослушать ещё раз</button>
+    <span class="pill score" id="score">Очки: 0</span>
+  </div>
+
+  <div class="card">
+    <div class="label">Последовательность (4 аккорда, 1-й — тоника)</div>
+    <div id="choices"></div>
+    <div class="muted">Жми варианты под 2–4 аккордами. Правильно/неправильно отмечается в тексте ✅ / ❌. Окна «Правильно/Неправильно» нет.</div>
+  </div>
+
+  <!-- Оверлей для разблокировки аудио на iOS -->
+  <div id="unlockOverlay">
+    <div>iOS требует один раз разрешить звук.<br>Нажми кнопку ниже, чтобы включить воспроизведение.</div>
+    <button id="unlockBtn" class="btn">Включить звук</button>
+  </div>
+
+<script>
+/* ===== Модель ===== */
+const DEGREE_LABELS = ["I","ii","iii","IV","V","vi","vii°"]; // минорные — маленькими
+const DEGREE_TO_CHORD = { "I":"C", "ii":"Dm", "iii":"Em", "IV":"F", "V":"G", "vi":"Am", "vii°":"Bmb5" };
+const CHORD_FREQS = {
+  "C":   [261.63, 329.63, 392.00],
+  "Dm":  [293.66, 349.23, 440.00],
+  "Em":  [329.63, 392.00, 493.88],
+  "F":   [349.23, 440.00, 523.25],
+  "G":   [392.00, 493.88, 587.33],
+  "Am":  [440.00, 523.25, 659.25],
+  "Bmb5":[493.88, 587.33, 698.46]
+};
+
+let audioCtx;
+let audioUnlocked = false;
+const DURATION = 1.0;     // длительность аккорда, сек
+const GAP = 0.12;         // пауза между аккордами
+let allowedDegrees = new Set(["I","IV","V"]);
+let progression = [];     // напр. ["I","IV","V","I"]
+let userAnswers = {};     // ключ: индекс (1..3)
+let score = 0;
+
+/* ===== Аудио: разблокировка для iOS ===== */
+function createAudioContext(){
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+  }
+  return audioCtx;
+}
+function unlockAudio(){
+  const ctx = createAudioContext();
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(()=>{});
+  }
+  try {
+    // короткий "тик" тишины, чтобы iOS разрешила аудио
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    audioUnlocked = true;
+    document.getElementById('unlockOverlay').classList.add('hidden');
+    document.getElementById('audioHint').style.display = 'none';
+  } catch(e) {}
+}
+document.addEventListener('touchend', ()=>{ if(!audioUnlocked) unlockAudio(); }, {passive:true});
+document.addEventListener('click',    ()=>{ if(!audioUnlocked) unlockAudio(); }, {passive:true});
+
+/* ===== Воспроизведение ===== */
+function playChordAtTime(degree, startTime) {
+  const ctx = createAudioContext();
+  const chord = DEGREE_TO_CHORD[degree];
+  const freqs = CHORD_FREQS[chord];
+  const now = ctx.currentTime;
+  const t0 = Math.max(now + 0.01, startTime);
+  const t1 = t0 + DURATION;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.03);  // атака
+  gain.gain.exponentialRampToValueAtTime(0.0001, t1);      // релиз
+  gain.connect(ctx.destination);
+
+  freqs.forEach(f=>{
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f, t0);
+    osc.connect(gain);
+    osc.start(t0);
+    osc.stop(t1);
+  });
+
+  return t1;
+}
+function playProgression(seq){
+  if (!audioUnlocked) {
+    document.getElementById('audioHint').style.display = 'inline';
+    return;
+  }
+  const ctx = createAudioContext();
+  let t = ctx.currentTime + 0.05;
+  seq.forEach(deg => {
+    t = playChordAtTime(deg, t) + GAP;
+  });
+}
+
+/* ===== UI ===== */
+const degSel = document.getElementById('degree-select');
+const choicesEl = document.getElementById('choices');
+const scoreEl = document.getElementById('score');
+const nextBtn = document.getElementById('next');
+const againBtn = document.getElementById('again');
+const unlockBtn = document.getElementById('unlockBtn');
+
+unlockBtn.addEventListener('click', unlockAudio);
+
+// Чекбоксы выбора ступеней
+DEGREE_LABELS.forEach(label=>{
+  const wrap = document.createElement('label');
+  wrap.className = 'pill';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = allowedDegrees.has(label);
+  cb.addEventListener('change', ()=>{
+    if(cb.checked) allowedDegrees.add(label);
+    else allowedDegrees.delete(label);
+  });
+  wrap.appendChild(cb);
+  wrap.appendChild(document.createTextNode(' ' + label));
+  degSel.appendChild(wrap);
+});
+
+// Тоника I или i(=vi)
+function getSelectedTonic(){
+  const radios = document.querySelectorAll('input[name="tonic"]');
+  for (const r of radios) if (r.checked) return r.value;
+  return "I";
+}
+
+function setScore(val){
+  score = val;
+  scoreEl.textContent = `Очки: ${score}`;
+  if (score >= 10) {
+    addRandomChord();
+    setScore(0);
+  }
+}
+function addRandomChord(){
+  const notUsed = DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
+  if (notUsed.length){
+    const pick = notUsed[Math.floor(Math.random()*notUsed.length)];
+    allowedDegrees.add(pick);
+    // отметить чекбокс визуально
+    [...degSel.querySelectorAll('label')].forEach(lbl=>{
+      const txt = lbl.textContent.trim();
+      if (txt === pick) lbl.querySelector('input[type="checkbox"]').checked = true;
+    });
+    alert(`Добавлен аккорд: ${pick}`);
+  }
+}
+
+function renderChoices(){
+  choicesEl.innerHTML = '';
+  userAnswers = {};
+
+  progression.forEach((deg, idx)=>{
+    const row = document.createElement('div'); row.className = 'row';
+    const label = document.createElement('span'); label.className='label';
+    label.textContent = `Аккорд ${idx+1}:`;
+    row.appendChild(label);
+
+    const variants = [...allowedDegrees];
+    const isFirst = (idx === 0);
+
+    variants.forEach(choice=>{
+      const btn = document.createElement('button');
+      btn.className = 'btn choice';
+      btn.textContent = choice;
+      if (isFirst){
+        if (choice === deg) btn.textContent = `${choice} ✅`;
+        else btn.disabled = true;
+      } else {
+        btn.addEventListener('click', ()=>{
+          if (!audioUnlocked) { unlockAudio(); }
+          if (userAnswers[idx]) return;
+          if (choice === progression[idx]){
+            btn.textContent = `${choice} ✅`;
+            setScore(score + 1);
+          } else {
+            btn.textContent = `${choice} ❌`;
+            // пометить правильный в этом ряду
+            [...row.querySelectorAll('button')].forEach(b=>{
+              const txt = b.textContent.replace(' ✅','').replace(' ❌','');
+              if (txt === progression[idx]) b.textContent = `${progression[idx]} ✅`;
+            });
+            setScore(score - 1);
+          }
+          userAnswers[idx] = choice;
+        });
+      }
+      row.appendChild(btn);
+    });
+
+    choicesEl.appendChild(row);
+  });
+}
+
+/* ===== Генерация ===== */
+function newProgression(){
+  const active = [...allowedDegrees];
+  if (active.length < 2) {
+    alert("Выбери хотя бы 2 аккорда для тренировки.");
+    return;
+  }
+  const tonic = getSelectedTonic(); // "I" или "vi"
+  const rest = Array.from({length:3}, ()=> active[Math.floor(Math.random()*active.length)]);
+  progression = [tonic, ...rest];
+  renderChoices();
+  playProgression(progression);
+}
+function replay(){
+  if (progression.length) playProgression(progression);
+}
+
+nextBtn.addEventListener('click', ()=> newProgression());
+againBtn.addEventListener('click', ()=> replay());
+</script>
+</body>
+</html>
