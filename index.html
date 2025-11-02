@@ -61,26 +61,39 @@ function ensureAudio(){
     audioCtx=new Ctx();
   }
 }
-function playChordAtTime(degree,startTime){
-  const chord=DEGREE_TO_CHORD[degree];
-  const freqs=CHORD_FREQS[chord];
-  const now=audioCtx.currentTime;
-  const t0=Math.max(now+0.001,startTime),t1=t0+DURATION;
+function playChordAtTime(degree, startTime){
+  const chord = DEGREE_TO_CHORD[degree];
+  const freqs = CHORD_FREQS[chord];
+  const now = audioCtx.currentTime;
+  const t0 = Math.max(now+0.001, startTime), t1 = t0 + DURATION;
 
-  const gain=audioCtx.createGain();
-  gain.gain.setValueAtTime(0.0001,t0);
-  gain.gain.exponentialRampToValueAtTime(0.6,t0+0.03);
-  gain.gain.exponentialRampToValueAtTime(0.0001,t1);
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.6, t0+0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t1);
   gain.connect(audioCtx.destination);
 
+  // основной аккорд
   freqs.forEach(f=>{
-    const o=audioCtx.createOscillator();
-    o.type="sine";
-    o.frequency.setValueAtTime(f,t0);
+    const o = audioCtx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(f, t0);
     o.connect(gain);
     o.start(t0);
     o.stop(t1);
   });
+
+  // басовая тоника — на октаву ниже первой ноты
+  const bass = audioCtx.createOscillator();
+  bass.type = "sine";
+  bass.frequency.setValueAtTime(freqs[0]/2, t0);
+  const bassGain = audioCtx.createGain();
+  bassGain.gain.setValueAtTime(0.4, t0); // чуть тише основного
+  bass.connect(bassGain);
+  bassGain.connect(audioCtx.destination);
+  bass.start(t0);
+  bass.stop(t1);
+
   return t1;
 }
 function playProgression(seq){
