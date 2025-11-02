@@ -41,16 +41,23 @@
   </div>
 
 <script>
-const DEGREE_LABELS=["I","ii","iii","IV","V","vi","vii°"];
-const DEGREE_TO_CHORD={I:"C",ii:"Dm",iii:"Em",IV:"F",V:"G",vi:"Am","vii°":"Bmb5"};
+// добавили "III" (E мажор) и сохранили порядок возрастания
+const DEGREE_LABELS = ["I","ii","iii","III","IV","V","vi","vii°"];
+
+const DEGREE_TO_CHORD = {
+  I:"C",  ii:"Dm", iii:"Em", III:"E",  IV:"F",  V:"G",  vi:"Am", "vii°":"Bmb5"
+};
+
+// с басовой тоникой как 1-я (низкая) нота
 const CHORD_FREQS = {
-  C:   [130.81, 261.63, 329.63, 392.00],   // C2 (бас), C4, E4, G4
-  Dm:  [146.83, 293.66, 349.23, 440.00],   // D2, D4, F4, A4
-  Em:  [164.81, 329.63, 392.00, 493.88],   // E2, E4, G4, B4
-  F:   [174.61, 349.23, 440.00, 523.25],   // F2, F4, A4, C5
-  G:   [196.00, 392.00, 493.88, 587.33],   // G2, G4, B4, D5
-  Am:  [220.00, 440.00, 523.25, 659.25],   // A2, A4, C5, E5
-  Bmb5:[246.94, 493.88, 587.33, 698.46]    // B2, B4, D5, F5
+  C:    [130.81, 261.63, 329.63, 392.00],   // C3, C4, E4, G4
+  Dm:   [146.83, 293.66, 349.23, 440.00],   // D3, D4, F4, A4
+  Em:   [164.81, 329.63, 392.00, 493.88],   // E3, E4, G4, B4
+  E:    [164.81, 329.63, 415.30, 493.88],   // E3, E4, G#4, B4   <-- новый аккорд
+  F:    [174.61, 349.23, 440.00, 523.25],   // F3, F4, A4, C5
+  G:    [196.00, 392.00, 493.88, 587.33],   // G3, G4, B4, D5
+  Am:   [220.00, 440.00, 523.25, 659.25],   // A3, A4, C5, E5
+  Bmb5: [246.94, 493.88, 587.33, 698.46]    // B3, B4, D5, F5
 };
 
 let audioCtx;
@@ -137,7 +144,9 @@ function renderChoices(){
     const row=document.createElement('div');row.className='row';
     const label=document.createElement('span');label.className='label';
     label.textContent=`Аккорд ${idx+1}:`;row.appendChild(label);
-    const variants=[...allowedDegrees];const isFirst=(idx===0);
+    const variants = [...allowedDegrees].sort(
+  (a,b) => DEGREE_LABELS.indexOf(a) - DEGREE_LABELS.indexOf(b)
+);const isFirst=(idx===0);
     variants.forEach(choice=>{
       const btn=document.createElement('button');btn.className='btn choice';btn.textContent=choice;
       if(isFirst){if(choice===deg)btn.textContent=`${choice} ✅`;else btn.disabled=true;}
