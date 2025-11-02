@@ -43,10 +43,14 @@
 <script>
 const DEGREE_LABELS=["I","ii","iii","IV","V","vi","vii°"];
 const DEGREE_TO_CHORD={I:"C",ii:"Dm",iii:"Em",IV:"F",V:"G",vi:"Am","vii°":"Bmb5"};
-const CHORD_FREQS={
-  C:[261.63,329.63,392.00],Dm:[293.66,349.23,440.00],Em:[329.63,392.00,493.88],
-  F:[349.23,440.00,523.25],G:[392.00,493.88,587.33],Am:[440.00,523.25,659.25],
-  Bmb5:[493.88,587.33,698.46]
+const CHORD_FREQS = {
+  C:   [130.81, 261.63, 329.63, 392.00],   // C2 (бас), C4, E4, G4
+  Dm:  [146.83, 293.66, 349.23, 440.00],   // D2, D4, F4, A4
+  Em:  [164.81, 329.63, 392.00, 493.88],   // E2, E4, G4, B4
+  F:   [174.61, 349.23, 440.00, 523.25],   // F2, F4, A4, C5
+  G:   [196.00, 392.00, 493.88, 587.33],   // G2, G4, B4, D5
+  Am:  [220.00, 440.00, 523.25, 659.25],   // A2, A4, C5, E5
+  Bmb5:[246.94, 493.88, 587.33, 698.46]    // B2, B4, D5, F5
 };
 
 let audioCtx;
@@ -65,37 +69,27 @@ function playChordAtTime(degree, startTime){
   const chord = DEGREE_TO_CHORD[degree];
   const freqs = CHORD_FREQS[chord];
   const now = audioCtx.currentTime;
-  const t0 = Math.max(now+0.001, startTime), t1 = t0 + DURATION;
+  const t0 = Math.max(now + 0.001, startTime);
+  const t1 = t0 + DURATION;
 
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.6, t0+0.03);
+  gain.gain.exponentialRampToValueAtTime(0.6, t0 + 0.03);
   gain.gain.exponentialRampToValueAtTime(0.0001, t1);
   gain.connect(audioCtx.destination);
 
-  // основной аккорд
-  freqs.forEach(f=>{
-    const o = audioCtx.createOscillator();
-    o.type = "sine";
-    o.frequency.setValueAtTime(f, t0);
-    o.connect(gain);
-    o.start(t0);
-    o.stop(t1);
+  freqs.forEach(f => {
+    const osc = audioCtx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f, t0);
+    osc.connect(gain);
+    osc.start(t0);
+    osc.stop(t1);
   });
-
-  // басовая тоника — на октаву ниже первой ноты
-  const bass = audioCtx.createOscillator();
-  bass.type = "sine";
-  bass.frequency.setValueAtTime(freqs[0]/2, t0);
-  const bassGain = audioCtx.createGain();
-  bassGain.gain.setValueAtTime(0.4, t0); // чуть тише основного
-  bass.connect(bassGain);
-  bassGain.connect(audioCtx.destination);
-  bass.start(t0);
-  bass.stop(t1);
 
   return t1;
 }
+  
 function playProgression(seq){
   ensureAudio();
   let t=audioCtx.currentTime+0.02;
