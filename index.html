@@ -111,7 +111,7 @@ function getSelectedTonic(){
 function setScore(v){
   score=v;
   scoreEl.textContent=`Очки: ${score}`;
-  if(score>=10){addRandomChord();setScore(0);}
+  if(score>=30){addRandomChord();setScore(0);}
 }
 function addRandomChord(){
   const notUsed=DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
