@@ -30,7 +30,6 @@
     <div class="label">Выбор тоники</div>
     <div class="row" id="tonic-select">
       <label class="pill"><input type="radio" name="tonic" value="I" checked> I (мажор)</label>
-      <!-- по договоренности «i (минор)» = аккорд vi (Am) в C -->
       <label class="pill"><input type="radio" name="tonic" value="vi"> i (минор)</label>
     </div>
   </div>
@@ -44,38 +43,56 @@
   <div class="card">
     <div class="label">Последовательность (4 аккорда, 1-й — тоника)</div>
     <div id="choices"></div>
-    <div class="muted">Нажимай на варианты под 2-м, 3-м и 4-м аккордами. Правильные/неправильные <b>обозначаются в тексте</b> ✅ / ❌. Окно с «Правильно» не показывается.</div>
+    <div class="muted">Жми варианты под 2–4 аккордами. Правильно/неправильно отмечается в тексте ✅ / ❌. Окна не всплывают.</div>
   </div>
 
 <script>
 /* ===== Модель ===== */
-const DEGREE_LABELS = ["I","ii","iii","IV","V","vi","vii°"]; // минорные маленькими
+const DEGREE_LABELS = ["I","ii","iii","IV","V","vi","vii°"];
 const DEGREE_TO_CHORD = { "I":"C", "ii":"Dm", "iii":"Em", "IV":"F", "V":"G", "vi":"Am", "vii°":"Bmb5" };
-// Частоты для аккордов (C dur): простая синус-сборка, WebAudio
 const CHORD_FREQS = {
-  "C":   [261.63, 329.63, 392.00],
-  "Dm":  [293.66, 349.23, 440.00],
-  "Em":  [329.63, 392.00, 493.88],
-  "F":   [349.23, 440.00, 523.25],
-  "G":   [392.00, 493.88, 587.33],
-  "Am":  [440.00, 523.25, 659.25],
-  "Bmb5":[493.88, 587.33, 698.46]
+  "C":   [261.63,329.63,392.00],
+  "Dm":  [293.66,349.23,440.00],
+  "Em":  [329.63,392.00,493.88],
+  "F":   [349.23,440.00,523.25],
+  "G":   [392.00,493.88,587.33],
+  "Am":  [440.00,523.25,659.25],
+  "Bmb5":[493.88,587.33,698.46]
 };
 
-let audioCtx;               // создадим при первом взаимодействии
-const DURATION = 1.0;       // сек на аккорд
-const GAP = 0.12;           // пауза между аккордами
-let allowedDegrees = new Set(["I","IV","V"]); // по умолчанию
-let progression = [];       // массив степеней — напр. ["I","IV","V","I"]
-let userAnswers = {};       // ключ: index(1..3), значение: выбранная степень
+let audioCtx;
+let audioUnlocked = false;
+const DURATION = 1.0;
+const GAP = 0.12;
+let allowedDegrees = new Set(["I","IV","V"]);
+let progression = [];
+let userAnswers = {};
 let score = 0;
 
-/* ===== Аудио ===== */
-function ensureAudio() {
+/* ===== Аудио / разблокировка iOS ===== */
+function ensureAudio(){
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
 }
+function unlockAudio(){
+  ensureAudio();
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(()=>{});
+  }
+  try {
+    const buf = audioCtx.createBuffer(1,1,22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+  } catch(e){}
+  audioUnlocked = true;
+}
+document.addEventListener('touchend', ()=>{ if(!audioUnlocked) unlockAudio(); }, {passive:true});
+document.addEventListener('click',    ()=>{ if(!audioUnlocked) unlockAudio(); }, {passive:true});
+
+/* ===== Воспроизведение ===== */
 function playChordAtTime(degree, startTime) {
   const chord = DEGREE_TO_CHORD[degree];
   const freqs = CHORD_FREQS[chord];
@@ -85,8 +102,8 @@ function playChordAtTime(degree, startTime) {
 
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.03);  // атака
-  gain.gain.exponentialRampToValueAtTime(0.0001, t1);      // релиз
+  gain.gain.exponentialRampToValueAtTime(0.4, t0 + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t1);
   gain.connect(audioCtx.destination);
 
   freqs.forEach(f=>{
@@ -101,11 +118,10 @@ function playChordAtTime(degree, startTime) {
   return t1;
 }
 function playProgression(seq){
+  unlockAudio();   // критично для iOS
   ensureAudio();
   let t = audioCtx.currentTime + 0.05;
-  seq.forEach((deg, i)=>{
-    t = playChordAtTime(deg, t) + GAP;
-  });
+  seq.forEach(deg => { t = playChordAtTime(deg, t) + GAP; });
 }
 
 /* ===== UI ===== */
@@ -131,10 +147,10 @@ DEGREE_LABELS.forEach(label=>{
   degSel.appendChild(wrap);
 });
 
-// тоника I (мажор) или i (минор) = vi
+// тоника I (мажор) или i (минор=vi)
 function getSelectedTonic(){
   const radios = document.querySelectorAll('input[name="tonic"]');
-  for (const r of radios) if (r.checked) return r.value; // "I" или "vi"
+  for (const r of radios) if (r.checked) return r.value;
   return "I";
 }
 
@@ -146,13 +162,11 @@ function setScore(val){
     setScore(0);
   }
 }
-
 function addRandomChord(){
   const notUsed = DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
   if (notUsed.length){
     const pick = notUsed[Math.floor(Math.random()*notUsed.length)];
     allowedDegrees.add(pick);
-    // отметить чекбокс визуально
     [...degSel.querySelectorAll('label')].forEach(lbl=>{
       const txt = lbl.textContent.trim();
       if (txt === pick) lbl.querySelector('input[type="checkbox"]').checked = true;
@@ -171,7 +185,6 @@ function renderChoices(){
     label.textContent = `Аккорд ${idx+1}:`;
     row.appendChild(label);
 
-    // кнопки вариантов — из текущего allowedDegrees
     const variants = [...allowedDegrees];
     const isFirst = (idx === 0);
 
@@ -180,33 +193,23 @@ function renderChoices(){
       btn.className = 'btn choice';
       btn.textContent = choice;
       if (isFirst){
-        // первый аккорд фиксированный (тоника); показываем ✅ на нём, остальные блокируем
-        if (choice === deg) {
-          btn.textContent = `${choice} ✅`;
-        } else {
-          btn.disabled = true;
-        }
+        if (choice === deg) btn.textContent = `${choice} ✅`;
+        else btn.disabled = true;
       } else {
         btn.addEventListener('click', ()=>{
-          if (userAnswers[idx]) return; // уже отвечено
+          if (userAnswers[idx]) return;
           if (choice === progression[idx]){
             btn.textContent = `${choice} ✅`;
             setScore(score + 1);
           } else {
             btn.textContent = `${choice} ❌`;
-            // пометить правильный в этом ряду
             [...row.querySelectorAll('button')].forEach(b=>{
-              if (b.textContent.replace(' ✅','') === progression[idx] ||
-                  b.textContent.replace(' ❌','') === progression[idx]){
-                b.textContent = `${progression[idx]} ✅`;
-              }
+              const txt = b.textContent.replace(' ✅','').replace(' ❌','');
+              if (txt === progression[idx]) b.textContent = `${progression[idx]} ✅`;
             });
             setScore(score - 1);
           }
           userAnswers[idx] = choice;
-          // проверяем — ответили ли на 3 позиции (2,3,4)
-          const answered = [1,2,3].every(i=>userAnswers[i]);
-          // без всплывающих окон — просто индикация и очки
         });
       }
       row.appendChild(btn);
@@ -216,16 +219,14 @@ function renderChoices(){
   });
 }
 
-/* ===== Логика генерации ===== */
+/* ===== Генерация ===== */
 function newProgression(){
-  // нужен минимум 2 выбранных варианта (иначе бессмысленно)
   const active = [...allowedDegrees];
   if (active.length < 2) {
     alert("Выбери хотя бы 2 аккорда для тренировки.");
     return;
   }
-  const tonic = getSelectedTonic(); // "I" или "vi"
-  // Собираем: первый = тоника, остальные 3 — случайно из allowedDegrees
+  const tonic = getSelectedTonic();
   const rest = Array.from({length:3}, ()=> active[Math.floor(Math.random()*active.length)]);
   progression = [tonic, ...rest];
   renderChoices();
@@ -235,9 +236,8 @@ function replay(){
   if (progression.length) playProgression(progression);
 }
 
-nextBtn.addEventListener('click', ()=>{ ensureAudio(); newProgression(); });
-againBtn.addEventListener('click', ()=>{ ensureAudio(); replay(); });
-
+nextBtn.addEventListener('click', ()=>{ unlockAudio(); ensureAudio(); newProgression(); });
+againBtn.addEventListener('click', ()=>{ unlockAudio(); ensureAudio(); replay(); });
 </script>
 </body>
 </html>
