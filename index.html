@@ -242,11 +242,12 @@ function renderHintsFeels(){
   hintPattern.innerHTML = '';
 }
 
-// показать название паттерна (после правильного решения)
-function showPatternInfoIfSolved(){
+// показать название паттерна после того, как все ответы выбраны (даже с ошибками)
+function showPatternInfoIfComplete(){
   if (!showHintsCB.checked) return;
-  const solved = [1,2,3].every(i => userAnswers[i] === progression[i]);
-  if (!solved) return;
+  const answeredAll = [1,2,3].every(i => userAnswers[i]);
+  if (!answeredAll) return;
+
   const key = progression.join('-');
   const meta = PATTERN_INFO[key];
   if (meta) {
@@ -286,7 +287,7 @@ function renderChoices(){
             setScore(score - 1);
           }
           userAnswers[idx] = choice;
-          showPatternInfoIfSolved();
+          showPatternInfoIfComplete();
         });
       }
       row.appendChild(btn);
