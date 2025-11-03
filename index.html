@@ -25,7 +25,7 @@
     <div class="label">Выбор тоники</div>
     <div class="row" id="tonic-select">
       <label class="pill"><input type="radio" name="tonic" value="I" checked> I (мажор)</label>
-      <label class="pill"><input type="radio" name="tonic" value="vi"> i (минор)</label>
+      <label class="pill"><input type="radio" name="tonic" value="vi"> vi (минор)</label>
     </div>
   </div>
 
@@ -123,50 +123,76 @@ function getSelectedTonic(){
   return "I";
 }
 function setScore(v){
-  score=v;
-  scoreEl.textContent=`Очки: ${score}`;
-  if(score>=30){addRandomChord();setScore(0);}
+  score = v;
+  scoreEl.textContent = `Очки: ${score}`;
+  if (score >= 30) {
+    addRandomChord();
+    setScore(0);
+  }
 }
+
 function addRandomChord(){
-  const notUsed=DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
-  if(notUsed.length){
-    const pick=notUsed[Math.floor(Math.random()*notUsed.length)];
+  const notUsed = DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
+  if (notUsed.length){
+    const pick = notUsed[Math.floor(Math.random()*notUsed.length)];
     allowedDegrees.add(pick);
+    // отметить чекбокс визуально
     [...degSel.querySelectorAll('label')].forEach(lbl=>{
-      if(lbl.textContent.trim()===pick) lbl.querySelector('input').checked=true;
+      const txt = lbl.textContent.trim();
+      if (txt === pick) lbl.querySelector('input').checked = true;
     });
+    // уведомление пользователю
+    alert(`Добавлен новый аккорд: ${pick}`);
   }
 }
 
 function renderChoices(){
-  choicesEl.innerHTML='';userAnswers={};
-  progression.forEach((deg,idx)=>{
-    const row=document.createElement('div');row.className='row';
-    const label=document.createElement('span');label.className='label';
-    label.textContent=`Аккорд ${idx+1}:`;row.appendChild(label);
-    const variants = [...allowedDegrees].sort(
-  (a,b) => DEGREE_LABELS.indexOf(a) - DEGREE_LABELS.indexOf(b)
-);const isFirst=(idx===0);
+  choicesEl.innerHTML = '';
+  userAnswers = {};
+
+  progression.forEach((deg, idx)=>{
+    const row = document.createElement('div'); row.className='row';
+    const label = document.createElement('span'); label.className='label';
+    label.textContent = `Аккорд ${idx+1}:`;
+    row.appendChild(label);
+
+    // ВАРИАНТЫ:
+    //  - для 1-го аккорда: только сама тоника (deg)
+    //  - для остальных: все выбранные, отсортированные по DEGREE_LABELS
+    const variants = (idx === 0)
+      ? [deg]
+      : [...allowedDegrees].sort((a,b)=>DEGREE_LABELS.indexOf(a)-DEGREE_LABELS.indexOf(b));
+
     variants.forEach(choice=>{
-      const btn=document.createElement('button');btn.className='btn choice';btn.textContent=choice;
-      if(isFirst){if(choice===deg)btn.textContent=`${choice} ✅`;else btn.disabled=true;}
-      else{
-        btn.addEventListener('click',()=>{
-          if(userAnswers[idx])return;
-          if(choice===progression[idx]){btn.textContent=`${choice} ✅`;setScore(score+1);}
-          else{
-            btn.textContent=`${choice} ❌`;
+      const btn = document.createElement('button');
+      btn.className = 'btn choice';
+      btn.textContent = choice;
+
+      if (idx === 0) {
+        // тоника: одна кнопка, сразу помечаем и блокируем
+        btn.textContent = `${choice} ✅`;
+        btn.disabled = true;
+      } else {
+        btn.addEventListener('click', ()=>{
+          if (userAnswers[idx]) return;
+          if (choice === progression[idx]) {
+            btn.textContent = `${choice} ✅`;
+            setScore(score + 1);
+          } else {
+            btn.textContent = `${choice} ❌`;
+            // подсветить правильный в этом ряду
             [...row.querySelectorAll('button')].forEach(b=>{
-              const t=b.textContent.replace(' ✅','').replace(' ❌','');
-              if(t===progression[idx])b.textContent=`${progression[idx]} ✅`;
+              const t = b.textContent.replace(' ✅','').replace(' ❌','');
+              if (t === progression[idx]) b.textContent = `${progression[idx]} ✅`;
             });
-            setScore(score-1);
+            setScore(score - 1);
           }
-          userAnswers[idx]=choice;
+          userAnswers[idx] = choice;
         });
       }
       row.appendChild(btn);
     });
+
     choicesEl.appendChild(row);
   });
 }
