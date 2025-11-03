@@ -15,6 +15,9 @@
   .pill{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:4px 10px;margin-right:6px}
   .score{font-weight:700}
   .spacer{flex:1}
+  .hints{font-size:14px;color:#444}
+  .hints dt{font-weight:600;margin-top:6px}
+  .muted{color:#666}
 </style>
 </head>
 <body>
@@ -22,11 +25,13 @@
 
   <div class="card">
     <div class="label">Опции</div>
-    <div class="row" id="tonic-select">
+    <div class="row" id="top-options">
       <label class="pill"><input type="radio" name="tonic" value="I" checked> I (мажор)</label>
       <label class="pill"><input type="radio" name="tonic" value="vi"> vi (минор)</label>
       <span class="spacer"></span>
       <label class="pill"><input type="checkbox" id="use-voicings"> Использовать обращения (компактные)</label>
+      <label class="pill"><input type="checkbox" id="use-patterns"> Типичные последовательности</label>
+      <label class="pill"><input type="checkbox" id="show-hints"> Подсказки</label>
     </div>
 
     <div class="label">Выбери аккорды для тренировки</div>
@@ -44,41 +49,84 @@
     <div id="choices"></div>
   </div>
 
+  <div class="card hints muted" id="hintsBox" style="display:none">
+    <div id="hint-feels"></div>
+    <div id="hint-pattern" style="margin-top:8px"></div>
+  </div>
+
 <script>
-/* ===== Ступени и соответствие аккордам ===== */
-// Порядок возрастания для сортировки вариантов
-const DEGREE_LABELS = ["I","ii","iii","III","IV","V","vi","vii°"];
-
+/* ===== Ступени, соответствия и частоты ===== */
+const DEGREE_LABELS = ["I","ii","iii","III","IV","V","vi","vii°"]; // порядок сортировки
 const DEGREE_TO_CHORD = {
-  I:"C",  ii:"Dm", iii:"Em", III:"E",  IV:"F",  V:"G",  vi:"Am", "vii°":"Bmb5"
+  I:"C",  ii:"Dm", iii:"Em", III:"E",  IV:"F", V:"G",  vi:"Am", "vii°":"Bmb5"
 };
-
-/* ===== Частоты (с басовой тоникой как 1-я нота) ===== */
+// басовая тоника включена (первая — низкая)
 const CHORD_FREQS = {
   C:    [130.81, 261.63, 329.63, 392.00],   // C3, C4, E4, G4
   Dm:   [146.83, 293.66, 349.23, 440.00],   // D3, D4, F4, A4
   Em:   [164.81, 329.63, 392.00, 493.88],   // E3, E4, G4, B4
-  E:    [164.81, 329.63, 415.30, 493.88],   // E3, E4, G#4, B4
+  E:    [164.81, 329.63, 415.30, 493.88],   // E3, E4, G#4, B4 (заимств. из гарм. минора)
   F:    [174.61, 349.23, 440.00, 523.25],   // F3, F4, A4, C5
   G:    [196.00, 392.00, 493.88, 587.33],   // G3, G4, B4, D5
   Am:   [220.00, 440.00, 523.25, 659.25],   // A3, A4, C5, E5
   Bmb5: [246.94, 493.88, 587.33, 698.46]    // B3, B4, D5, F5
 };
-// Триады без баса (удобно для обращения)
-const CHORD_TRIADS = Object.fromEntries(
-  Object.entries(CHORD_FREQS).map(([k, arr]) => [k, arr.slice(1)])
-);
+// триады без баса (для обращений)
+const CHORD_TRIADS = Object.fromEntries(Object.entries(CHORD_FREQS).map(([k,a])=>[k,a.slice(1)]));
+
+/* ===== Варианты типичных последовательностей, начинающихся с тоники ===== */
+// Мажор: только те, что начинаются с I
+const MAJOR_PATTERNS = [
+  ["I","IV","V","I"],          // классическая I–IV–V–I
+  ["I","V","vi","IV"],         // «поп-квадрат» (Axis progression)
+  ["I","vi","ii","V"],         // частичный циркулус квинтов
+  ["I","V","IV","V"],          // рок-н-ролльный ход
+  ["I","iii","vi","IV"],       // мягкий поп-ход
+];
+// Минор (в нашей нотации тоника — vi), все начинаются с vi
+const MINOR_PATTERNS = [
+  ["vi","IV","I","V"],         // «минорный поп-квадрат»
+  ["vi","V","IV","III"],       // андалузская каденция: Am–G–F–E
+  ["vi","ii","V","I"],         // минорная ii–V–I с центром vi
+  ["vi","vii°","III","V"],     // классическое тяготение к доминанте
+  ["vi","IV","V","vi"],        // минорное кольцо
+];
+
+/* Названия/комментарии к паттернам (покажем только ПОСЛЕ верного ответа) */
+const PATTERN_INFO = {
+  "I-IV-V-I": {name:"Классическая каденция", note:"Базовая тональная формула."},
+  "I-V-vi-IV": {name:"Поп-квадрат (Axis progression)", note:"Сотни поп-песен."},
+  "I-vi-ii-V": {name:"Циркулус квинтов (часть)", note:"I→vi→ii→V."},
+  "I-V-IV-V": {name:"Рок-н-ролльный ход", note:"Ранний рок/блюзовый оборот."},
+  "I-iii-vi-IV": {name:"Поп-ход", note:"Мягкая, лирическая окраска."},
+
+  "vi-IV-I-V": {name:"Минорный поп-квадрат", note:"Am–F–C–G."},
+  "vi-V-IV-III": {name:"Андалузская каденция", note:"Am–G–F–E (фламенко/AOR)."},
+  "vi-ii-V-I": {name:"Минорный ii–V–I (центр vi)", note:"Логика джаза в миноре."},
+  "vi-vii°-III-V": {name:"Тяготение к доминанте", note:"Через ведущий к E/III."},
+  "vi-IV-V-vi": {name:"Минорное кольцо", note:"Возврат в Am."},
+};
+
+/* Короткие «оттенки» аккордов — для ассоциаций */
+const CHORD_FEELS = {
+  C:   "устойчивый, светлый, «дом»",
+  Dm:  "мягкое преднапряжение (преддоминанта)",
+  Em:  "прозрачная, лёгкая грусть",
+  E:   "яркое напряжение (заимств. из гарм. минора), тянет вверх",
+  F:   "широкая опора, подготовка к доминанте",
+  G:   "доминантное напряжение, стремление к I",
+  Am:  "мягкая минорная окраска, родственник C",
+  Bmb5:"острое неустойчивое напряжение (ведёт к C/Am)",
+};
 
 /* ===== Параметры синтеза ===== */
 let audioCtx;
-const DURATION = 1.0;   // длительность аккорда
-const GAP = 0.12;       // пауза между аккордами
-
-// Диапазоны для «компактных» обращений (примерно одна октава)
-const UPPER_LOW = 261.63;   // C4
-const UPPER_HIGH = 523.25;  // C5
-const BASS_LOW = 130.81;    // C3
-const BASS_HIGH = 196.00;   // G3
+const DURATION = 1.0;
+const GAP = 0.12;
+const UPPER_LOW = 261.63;  // C4
+const UPPER_HIGH = 523.25; // C5
+const BASS_LOW = 130.81;   // C3
+const BASS_HIGH = 196.00;  // G3
 
 /* ===== Состояние ===== */
 let allowedDegrees = new Set(["I","IV","V"]);
@@ -93,67 +141,36 @@ function ensureAudio(){
     audioCtx = new Ctx();
   }
 }
-
-// Помощник: сдвинуть ноту в заданный диапазон (умножая /2 или *2)
 function foldToRange(freq, low, high){
   while (freq < low) freq *= 2;
   while (freq > high) freq /= 2;
   return freq;
 }
-
-// Сгенерировать частоты аккорда с учётом опции «обращения»
 function getChordFrequencies(chordName){
   const useVoicings = document.getElementById('use-voicings').checked;
-  if (!useVoicings) {
-    // базовые частоты с басом
-    return CHORD_FREQS[chordName].slice();
-  } else {
-    // компактное обращение: уложить триаду в одну октаву (C4..C5),
-    // бас — тоника, нормализованная в область C3..G3
-    const triad = CHORD_TRIADS[chordName].slice(); // [root, third, fifth] (без баса)
-    // уложить каждую в верхний диапазон
-    const voiced = triad.map(f => foldToRange(f, UPPER_LOW, UPPER_HIGH)).sort((a,b)=>a-b);
-
-    // если разброс всё ещё > октавы — поджать (редко, но на всякий)
-    const spread = Math.max(...voiced) / Math.min(...voiced);
-    if (spread > 2.01) { // > 1 октавы
-      // опустить самую верхнюю на октаву
-      voiced[voiced.length-1] /= 2;
-      voiced.sort((a,b)=>a-b);
-    }
-
-    // бас — тоника исходного аккорда, приведенная к общему диапазону
-    const root = CHORD_TRIADS[chordName][0];
-    const bass = foldToRange(root, BASS_LOW, BASS_HIGH);
-
-    return [bass, ...voiced];
+  if (!useVoicings) return CHORD_FREQS[chordName].slice();
+  const triad = CHORD_TRIADS[chordName].slice();
+  const voiced = triad.map(f=>foldToRange(f, UPPER_LOW, UPPER_HIGH)).sort((a,b)=>a-b);
+  if (Math.max(...voiced)/Math.min(...voiced) > 2.01) {
+    voiced[voiced.length-1] /= 2; voiced.sort((a,b)=>a-b);
   }
+  const root = CHORD_TRIADS[chordName][0];
+  const bass = foldToRange(root, BASS_LOW, BASS_HIGH);
+  return [bass, ...voiced];
 }
-
 function playChordAtTime(degree, startTime){
   const chord = DEGREE_TO_CHORD[degree];
   const freqs = getChordFrequencies(chord);
   const now = audioCtx.currentTime;
-  const t0 = Math.max(now + 0.001, startTime);
-  const t1 = t0 + DURATION;
-
+  const t0 = Math.max(now + 0.001, startTime), t1 = t0 + DURATION;
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0.0001, t0);
   gain.gain.exponentialRampToValueAtTime(0.6, t0 + 0.03);
   gain.gain.exponentialRampToValueAtTime(0.0001, t1);
   gain.connect(audioCtx.destination);
-
-  freqs.forEach(f=>{
-    const o = audioCtx.createOscillator();
-    o.type = "sine";
-    o.frequency.setValueAtTime(f, t0);
-    o.connect(gain);
-    o.start(t0);
-    o.stop(t1);
-  });
+  freqs.forEach(f=>{ const o=audioCtx.createOscillator(); o.type="sine"; o.frequency.setValueAtTime(f,t0); o.connect(gain); o.start(t0); o.stop(t1); });
   return t1;
 }
-
 function playProgression(seq){
   ensureAudio();
   let t = audioCtx.currentTime + 0.02;
@@ -166,12 +183,17 @@ const choicesEl = document.getElementById('choices');
 const scoreEl = document.getElementById('score');
 const nextBtn = document.getElementById('next');
 const againBtn = document.getElementById('again');
+const usePatternsCB = document.getElementById('use-patterns');
+const showHintsCB = document.getElementById('show-hints');
+const hintsBox = document.getElementById('hintsBox');
+const hintFeels = document.getElementById('hint-feels');
+const hintPattern = document.getElementById('hint-pattern');
 
-// построить чекбоксы выбора ступеней (в порядке DEGREE_LABELS)
+// чекбоксы ступеней (в порядке DEGREE_LABELS)
 DEGREE_LABELS.forEach(l=>{
   const wrap=document.createElement('label'); wrap.className='pill';
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=allowedDegrees.has(l);
-  cb.addEventListener('change',()=>{ cb.checked?allowedDegrees.add(l):allowedDegrees.delete(l); });
+  cb.addEventListener('change',()=>{ cb.checked?allowedDegrees.add(l):allowedDegrees.delete(l); renderHintsFeels(); });
   wrap.appendChild(cb); wrap.appendChild(document.createTextNode(' '+l)); degSel.appendChild(wrap);
 });
 
@@ -186,10 +208,7 @@ function getSelectedTonic(){
 function setScore(v){
   score = v;
   scoreEl.textContent = `Очки: ${score}`;
-  if (score >= 30) {
-    addRandomChord();
-    setScore(0);
-  }
+  if (score >= 30) { addRandomChord(); setScore(0); }
 }
 function addRandomChord(){
   const notUsed = DEGREE_LABELS.filter(d=>!allowedDegrees.has(d));
@@ -202,6 +221,40 @@ function addRandomChord(){
       if (txt === pick) lbl.querySelector('input').checked = true;
     });
     alert(`Добавлен новый аккорд: ${pick}`);
+    renderHintsFeels();
+  }
+}
+
+// подсказки — оттенки по текущим «доступным» аккордам
+function renderHintsFeels(){
+  if (!showHintsCB.checked) { hintsBox.style.display='none'; return; }
+  hintsBox.style.display = 'block';
+  // список оттенков только по выбранным аккордам (для фокуса)
+  const chosen = [...allowedDegrees].sort((a,b)=>DEGREE_LABELS.indexOf(a)-DEGREE_LABELS.indexOf(b));
+  const lines = chosen.map(d=>{
+    const name = d;
+    const chord = DEGREE_TO_CHORD[d];
+    const feel = CHORD_FEELS[chord] || "";
+    return `<dt>${name} (${chord})</dt><dd>${feel}</dd>`;
+  }).join('');
+  hintFeels.innerHTML = `<div class="label">Оттенки выбранных аккордов</div><dl>${lines}</dl>`;
+  // описание паттерна очищаем (покажем после верного ответа)
+  hintPattern.innerHTML = '';
+}
+
+// показать название паттерна (после правильного решения)
+function showPatternInfoIfSolved(){
+  if (!showHintsCB.checked) return;
+  const solved = [1,2,3].every(i => userAnswers[i] === progression[i]);
+  if (!solved) return;
+  const key = progression.join('-');
+  const meta = PATTERN_INFO[key];
+  if (meta) {
+    hintPattern.innerHTML = `<div class="label">Последовательность</div>
+      <div><b>${progression.join('–')}</b> — ${meta.name}. <span class="muted">${meta.note}</span></div>`;
+  } else {
+    hintPattern.innerHTML = `<div class="label">Последовательность</div>
+      <div><b>${progression.join('–')}</b></div>`;
   }
 }
 
@@ -212,26 +265,20 @@ function renderChoices(){
     const label=document.createElement('span'); label.className='label';
     label.textContent=`Аккорд ${idx+1}:`; row.appendChild(label);
 
-    // Для 1-го аккорда (тоники) — одна кнопка-тоника
     const variants = (idx === 0)
-      ? [deg]
+      ? [deg] // тоника: одна кнопка
       : [...allowedDegrees].sort((a,b)=>DEGREE_LABELS.indexOf(a)-DEGREE_LABELS.indexOf(b));
 
     variants.forEach(choice=>{
       const btn=document.createElement('button'); btn.className='btn choice'; btn.textContent=choice;
-
-      if (idx === 0) {
-        btn.textContent = `${choice} ✅`;
-        btn.disabled = true;
-      } else {
+      if (idx === 0) { btn.textContent = `${choice} ✅`; btn.disabled = true; }
+      else {
         btn.addEventListener('click', ()=>{
           if (userAnswers[idx]) return;
-          if (choice === progression[idx]) {
-            btn.textContent = `${choice} ✅`;
-            setScore(score + 1);
-          } else {
+          if (choice === progression[idx]) { btn.textContent = `${choice} ✅`; setScore(score + 1); }
+          else {
             btn.textContent = `${choice} ❌`;
-            // показать корректный в этом ряду
+            // показать правильный
             [...row.querySelectorAll('button')].forEach(b=>{
               const t = b.textContent.replace(' ✅','').replace(' ❌','');
               if (t === progression[idx]) b.textContent = `${progression[idx]} ✅`;
@@ -239,29 +286,51 @@ function renderChoices(){
             setScore(score - 1);
           }
           userAnswers[idx] = choice;
+          showPatternInfoIfSolved();
         });
       }
       row.appendChild(btn);
     });
-
     choicesEl.appendChild(row);
   });
+  renderHintsFeels();
 }
 
 /* ===== Генерация ===== */
+function pickPattern(){
+  const tonic = getSelectedTonic(); // "I" или "vi"
+  const pool = (tonic === "I") ? MAJOR_PATTERNS : MINOR_PATTERNS;
+  // (по желанию: можно фильтровать по allowedDegrees, но пока не будем усложнять)
+  return pool[Math.floor(Math.random()*pool.length)];
+}
 function newProgression(){
   const active=[...allowedDegrees];
-  if(active.length<2){alert("Выбери хотя бы 2 аккорда для тренировки.");return;}
+  if(active.length<2 && !usePatternsCB.checked){ alert("Выбери хотя бы 2 аккорда для тренировки."); return; }
   const tonic=getSelectedTonic();
-  const rest=Array.from({length:3},()=>active[Math.floor(Math.random()*active.length)]);
-  progression=[tonic,...rest];
+  if (usePatternsCB.checked) {
+    progression = pickPattern();
+    // гарантируем, что 1-й — выбранная тоника (по нашим спискам так и есть)
+    if (progression[0] !== tonic) {
+      // если пользователь переключил тонику, а паттерн — не её семьи, заменим на «базовый»
+      progression = (tonic === "I") ? ["I","IV","V","I"] : ["vi","IV","I","V"];
+    }
+  } else {
+    const rest=Array.from({length:3},()=>active[Math.floor(Math.random()*active.length)]);
+    progression=[tonic,...rest];
+  }
   renderChoices();
   playProgression(progression);
 }
 function replay(){ if(progression.length) playProgression(progression); }
 
+/* ===== События ===== */
+document.getElementById('use-patterns').addEventListener('change', ()=>{ /* ничего, просто переключатель */ });
+document.getElementById('show-hints').addEventListener('change', ()=>{ renderHintsFeels(); });
 nextBtn.addEventListener('click', ()=>{ ensureAudio(); newProgression(); });
 againBtn.addEventListener('click', ()=>{ ensureAudio(); replay(); });
+
+// начальная отрисовка подсказок (пустых)
+renderHintsFeels();
 </script>
 </body>
 </html>
